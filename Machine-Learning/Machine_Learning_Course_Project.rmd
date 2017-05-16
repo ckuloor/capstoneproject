@@ -1,0 +1,122 @@
+---
+title: "Practical Machine Learing Course Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview 
+
+This project is final requirement in completing the practical machine learning course offered by coursera. In this project, the personal activity data collected from devices such as Jawbone Up, Nike FuelBand, and Fitbit is used as the data set. These type of devices are  used by a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. People usually quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal is to use this data and predict how well they do certain activitied.  In other words, the primary goal is to predict the "classe" variable, the manner in which people did the exercise using the machine learning tools such as caret pacakge and techiniques such as model fitting and prediction.   
+
+## Data
+
+The training data for this project are available here: [Training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here: [Test](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+### Data Exploratory Analysis and Cleanup
+
+Download the files and load the data into R.
+```{r }
+library(caret)
+library(rpart)
+if(!file.exists("pml-training.csv")) {
+  url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  download.file(url, destfile = "pml-training.csv")
+}
+
+if(!file.exists("pml-testing.csv")) {
+  url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(url, destfile = "pml-testing.csv")
+}
+#while reading from the csv file treat, "NA","",and "#DIV/0!" all as NAs.
+training <- read.csv("pml-training.csv", na.strings=c("NA","","#DIV/0!"))
+testing <- read.csv("pml-testing.csv", na.strings=c("NA","","#DIV/0!"))
+# count of variables with NAs
+length(colnames(training[,colSums(is.na(training)) > 0]))
+```
+There are many varaibles that have majority values as NA. Also, columns 1 to 7 are some meta data
+about time stamps, user names that will not have any effect on the outcome classe. Hence filtering them out.
+```{r}
+training <- training[,-c(1:7)]
+training <- training[, colSums(is.na(training))==0]
+testing <- testing[,-c(1:7)]
+testing <- testing[, colSums(is.na(testing))==0]
+```
+
+```{r}
+nrow(training)
+ncol(training)
+```
+
+```{r}
+nrow(testing)
+ncol(testing)
+```
+### Modeling Building and Training
+
+#### Cross Validation
+
+Further partitioning the training set into 60 as trainingSubSet and 40% as testingSubSet. 
+
+```{r}
+trainPartition <- createDataPartition(training$classe, p=0.6, list=FALSE)
+trainingSubSet <- training[trainPartition,]
+testingSubSet <- training[-trainPartition,]
+dim(trainingSubSet)
+dim(testingSubSet)
+```
+
+#### Prediction using Decision Trees
+
+```{r, message=FALSE}
+set.seed(12345)
+# Build the model using the classfication tree algorithm on the trainingSubSet.
+dtModel <- train(classe~., data=trainingSubSet,method="rpart")
+predDtModel <- predict(dtModel, newdata=testingSubSet)
+cMatDT <- confusionMatrix(predDtModel, testingSubSet$classe)
+cMatDT
+```
+#### Prediction using Random Forests
+
+```{r, message=FALSE}
+set.seed(12345)
+rfModel <- train(classe ~.,data=trainingSubSet,method="rf")
+plot(rfModel)
+predRfModel <- predict(rfModel, newdata=testingSubSet)
+cMatRF <- confusionMatrix(predRfModel, testingSubSet$classe)
+cMatRF
+```
+
+#### Prediction using Generalized Boosted Models
+
+```{r, message=FALSE, warning=FALSE,comment=FALSE}
+set.seed(12345)
+fitControl <- trainControl(method="cv", number=5, verboseIter = FALSE)
+gbmModel <- train(classe ~.,data=trainingSubSet,method="gbm", trControl=fitControl, verbose=FALSE)
+plot(gbmModel, ylim = c(0.9,1.0))
+predGbmModel <- predict(gbmModel, newdata=testingSubSet)
+cMatGBM <- confusionMatrix(predGbmModel, testingSubSet$classe)
+cMatGBM
+```
+
+### Model Selection and Prediction
+
+* Decision Tree Accuracy = 49.11%
+* Random Forest Accuracy = 99.38%
+* Generalized Boosted Model Accuracy = 96.01%
+
+The decision tree method of prediction has the lowest accruacy while the random forest method of prediction has the highest accurary 99.16% with an out of sample error rate 100-99.38=0.62%. Hence we are going to use the random forest model as the best model for prediciting the outcome classe.
+The predicted classe values for the given testing data is:
+
+```{r, message=FALSE}
+
+testingPrediction <- predict(rfModel, newdata=testing)
+testingPrediction
+testingPredicted <- testing
+testingPredicted$PredictedClasse <- testingPrediction
+write.table(testingPredicted, file="pml-testing-predicted.csv", sep = ",", row.names = FALSE)
+```
